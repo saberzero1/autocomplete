@@ -59,8 +59,8 @@ function rangeAroundSelected(total: number, selected: number, max: number) {
     let off = Math.floor(selected / max)
     return {from: off * max, to: (off + 1) * max}
   }
-  let off = Math.floor((total - selected) / max)
-  return {from: total - (off + 1) * max, to: total - off * max}
+  let off = Math.ceil((total - selected) / max)
+  return {from: total - off * max, to: total - (off - 1) * max}
 }
 
 class CompletionTooltip {

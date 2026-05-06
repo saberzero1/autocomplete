@@ -57,7 +57,8 @@ export const baseTheme = EditorView.baseTheme({
     content: '"···"',
     opacity: 0.5,
     display: "block",
-    textAlign: "center"
+    textAlign: "center",
+    cursor: "pointer",
   },
 
   ".cm-tooltip.cm-completionInfo": {
