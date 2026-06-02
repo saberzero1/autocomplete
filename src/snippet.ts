@@ -50,6 +50,8 @@ class Snippet {
     for (let line of template.split(/\r\n?|\n/)) {
       while (m = /[#$]\{(?:(\d+)(?::([^{}]*))?|((?:\\[{}]|[^{}])*))\}/.exec(line)) {
         let seq = m[1] ? +m[1] : null, rawName = m[2] || m[3] || "", found = -1
+        // `${0}` is the cursor's final position, after every other tab stop.
+        if (seq === 0) seq = 1e9
         let name = rawName.replace(/\\[{}]/g, m => m[1])
         for (let i = 0; i < fields.length; i++) {
           if (seq != null ? fields[i].seq == seq : name ? fields[i].name == name : false) found = i
@@ -165,7 +167,8 @@ function fieldSelection(ranges: readonly FieldRange[], field: number) {
 ///
 /// The order of fields defaults to textual order, but you can add
 /// numbers to placeholders (`${1}` or `${1:defaultText}`) to provide
-/// a custom order.
+/// a custom order. `${0}` is special—it is always the last stop, where
+/// the cursor ends up after tabbing through the other fields.
 ///
 /// To include a literal `{` or `}` in your template, put a backslash
 /// in front of it. This will be removed and the brace will not be

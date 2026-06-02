@@ -1,7 +1,8 @@
 import {EditorView} from "@codemirror/view"
 import {EditorState, EditorSelection} from "@codemirror/state"
 import {CompletionSource, autocompletion, CompletionContext, startCompletion,
-        currentCompletions, completionStatus, completeFromList, acceptCompletion} from "@codemirror/autocomplete"
+        currentCompletions, completionStatus, completeFromList, acceptCompletion,
+        snippet, nextSnippetField} from "@codemirror/autocomplete"
 import ist from "ist"
 
 const Timeout = 1000, Chunk = 15
@@ -419,6 +420,21 @@ describe("autocomplete", () => {
       acceptCompletion(view)
       ist(view.state.doc.toString(), "woooooo\n\npow")
     })
+    run.test("selects the first snippet field and makes ${0} the final stop", {
+      sources: []
+    }, async (view) => {
+      snippet("foo(${1:bar})${0}")(view, null, 0, 0)
+      ist(view.state.doc.toString(), "foo(bar)")
+      // The first placeholder is selected, not the ${0} exit stop.
+      let sel = view.state.selection.main
+      ist(view.state.sliceDoc(sel.from, sel.to), "bar")
+      // Tabbing once moves to ${0}: an empty selection at the end.
+      nextSnippetField(view)
+      let exit = view.state.selection.main
+      ist(exit.empty)
+      ist(exit.from, 8)
+    })
+
     return run.finish()
   })
 })
