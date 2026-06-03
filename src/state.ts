@@ -297,7 +297,7 @@ export class ActiveResult extends ActiveSource {
     if (mapping.empty) return this
     let result = this.result.map ? this.result.map(this.result, mapping) : this.result
     if (!result) return new ActiveSource(this.source, State.Inactive)
-    return new ActiveResult(this.source, this.explicit, mapping.mapPos(this.limit), this.result,
+    return new ActiveResult(this.source, this.explicit, mapping.mapPos(this.limit), result,
                             mapping.mapPos(this.from), mapping.mapPos(this.to, 1))
   }
 
