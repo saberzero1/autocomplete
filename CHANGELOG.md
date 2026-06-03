@@ -1,3 +1,11 @@
+## 6.20.3 (2026-06-03)
+
+### Bug fixes
+
+In snippets, treat tab stop 0 as the final one, aligning with a widely used convention.
+
+Fix a bug in the handling of changes before the completion while completion is active.
+
 ## 6.20.2 (2026-05-06)
 
 ### Bug fixes
