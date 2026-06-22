@@ -275,7 +275,7 @@ export class ActiveResult extends ActiveSource {
 
   hasResult(): this is ActiveResult { return true }
 
-  updateFor(tr: Transaction, type: UpdateType) {
+  updateFor(tr: Transaction, type: UpdateType): ActiveSource {
     if (!(type & UpdateType.SimpleInteraction)) return this.map(tr.changes)
     let result = this.result as CompletionResult | null
     if (result!.map && !tr.changes.empty) result = result!.map(result!, tr.changes)
