@@ -293,7 +293,7 @@ export class ActiveResult extends ActiveSource {
     return new ActiveSource(this.source, State.Pending, this.explicit)
   }
 
-  map(mapping: ChangeDesc) {
+  map(mapping: ChangeDesc): ActiveSource {
     if (mapping.empty) return this
     let result = this.result.map ? this.result.map(this.result, mapping) : this.result
     if (!result) return new ActiveSource(this.source, State.Inactive)
