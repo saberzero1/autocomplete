@@ -30,3 +30,7 @@ Upstream base: commit `75a3b6a` (post-v6.20.3, HEAD of `main` as of 2026-07-13).
 Added exports:
 - `snippetState` (StateField)
 - `cycleSnippetChoice` (StateCommand factory)
+- `FieldRange` (class — for external range manipulation in dynamic snippets)
+- `ActiveSnippet` (class — for type-checking and constructing snippet state)
+- `setActive` (StateEffect — for dispatching snippet state changes from ViewPlugins)
+- `fieldSelection` (function — for creating cursor selections from field ranges)
