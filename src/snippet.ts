@@ -22,9 +22,14 @@ class FieldRange {
   }
 }
 
+interface SnippetChoices {
+  [fieldIndex: number]: string[]
+}
+
 class Snippet {
   constructor(readonly lines: readonly string[],
-              readonly fieldPositions: readonly FieldPos[]) {}
+              readonly fieldPositions: readonly FieldPos[],
+              readonly choices: SnippetChoices = {}) {}
 
   instantiate(state: EditorState, pos: number) {
     let text = [], lineStart = [pos]
@@ -41,46 +46,246 @@ class Snippet {
     }
     let ranges = this.fieldPositions.map(
       pos => new FieldRange(pos.field, lineStart[pos.line] + pos.from, lineStart[pos.line] + pos.to))
-    return {text, ranges}
+    return {text, ranges, choices: this.choices}
   }
 
   static parse(template: string) {
     let fields: {seq: number | null, name: string}[] = []
-    let lines = [], positions: FieldPos[] = [], m
-    for (let line of template.split(/\r\n?|\n/)) {
-      while (m = /[#$]\{(?:(\d+)(?::([^{}]*))?|((?:\\[{}]|[^{}])*))\}/.exec(line)) {
-        let seq = m[1] ? +m[1] : null, rawName = m[2] || m[3] || "", found = -1
-        // `${0}` is the cursor's final position, after every other tab stop.
-        if (seq === 0) seq = 1e9
-        let name = rawName.replace(/\\[{}]/g, m => m[1])
-        for (let i = 0; i < fields.length; i++) {
-          if (seq != null ? fields[i].seq == seq : name ? fields[i].name == name : false) found = i
-        }
-        if (found < 0) {
-          let i = 0
-          while (i < fields.length && (seq == null || (fields[i].seq != null && fields[i].seq! < seq))) i++
-          fields.splice(i, 0, {seq, name})
-          found = i
-          for (let pos of positions) if (pos.field >= found) pos.field++
-        }
-        for (let pos of positions) if (pos.line == lines.length && pos.from > m.index) {
-          let snip = m[2] ? 3 + (m[1] || "").length : 2
-          pos.from -= snip
-          pos.to -= snip
-        }
-        positions.push(new FieldPos(found, lines.length, m.index, m.index + name.length))
-        line = line.slice(0, m.index) + rawName + line.slice(m.index + m[0].length)
+    let lines = [], positions: FieldPos[] = []
+    let choices: SnippetChoices = {}
+
+    function shiftChoices(from: number) {
+      let updated: SnippetChoices = {}
+      for (let key in choices) {
+        let index = +key
+        updated[index >= from ? index + 1 : index] = choices[index]
       }
-      line = line.replace(/\\([{}])/g, (_, brace, index) => {
-        for (let pos of positions) if (pos.line == lines.length && pos.from > index) {
-          pos.from--
-          pos.to--
-        }
-        return brace
-      })
-      lines.push(line)
+      choices = updated
     }
-    return new Snippet(lines, positions)
+
+    function fieldIndex(seq: number | null, name: string) {
+      if (seq === 0) seq = 1e9
+      let found = -1
+      for (let i = 0; i < fields.length; i++) {
+        if (seq != null ? fields[i].seq == seq : name ? fields[i].name == name : false) found = i
+      }
+      if (found < 0) {
+        let i = 0
+        while (i < fields.length && (seq == null || (fields[i].seq != null && fields[i].seq! < seq))) i++
+        fields.splice(i, 0, {seq, name})
+        found = i
+        for (let pos of positions) if (pos.field >= found) pos.field++
+        if (Object.keys(choices).length) shiftChoices(found)
+      }
+      return found
+    }
+
+    function isDigit(ch: string) { return ch >= "0" && ch <= "9" }
+
+    class LineParser {
+      pos = 0
+      out = ""
+
+      constructor(readonly input: string, readonly line: number) {}
+
+      parse() {
+        this.parseText(false)
+        return this.out
+      }
+
+      parseText(stopOnBrace: boolean) {
+        while (this.pos < this.input.length) {
+          let ch = this.input.charAt(this.pos)
+          if (stopOnBrace && ch == "}") {
+            this.pos++
+            return
+          }
+          if (ch == "\\") {
+            if (this.takeEscape()) continue
+          }
+          if (ch == "$" || ch == "#") {
+            let next = this.input.charAt(this.pos + 1)
+            if (ch == "$" && next == "$") {
+              this.out += "$"
+              this.pos += 2
+              continue
+            }
+            if (next == "{") {
+              this.pos += 2
+              this.parseField()
+              continue
+            }
+            if (ch == "$" && isDigit(next)) {
+              this.pos++
+              this.parseBareTabstop()
+              continue
+            }
+          }
+          this.out += ch
+          this.pos++
+        }
+      }
+
+      takeEscape() {
+        let next = this.input.charAt(this.pos + 1)
+        if (next && (next == "{" || next == "}" || next == "$" || next == "\\" || next == "|")) {
+          this.out += next
+          this.pos += 2
+          return true
+        }
+        return false
+      }
+
+      parseBareTabstop() {
+        let seq = 0
+        while (this.pos < this.input.length) {
+          let ch = this.input.charAt(this.pos)
+          if (!isDigit(ch)) break
+          seq = seq * 10 + ch.charCodeAt(0) - 48
+          this.pos++
+        }
+        let field = fieldIndex(seq, "")
+        positions.push(new FieldPos(field, this.line, this.out.length, this.out.length))
+      }
+
+      parseField() {
+        if (this.pos >= this.input.length) {
+          this.out += "${"
+          return
+        }
+        let ch = this.input.charAt(this.pos)
+        if (isDigit(ch)) {
+          let start = this.pos
+          let seq = 0
+          while (this.pos < this.input.length) {
+            ch = this.input.charAt(this.pos)
+            if (!isDigit(ch)) break
+            seq = seq * 10 + ch.charCodeAt(0) - 48
+            this.pos++
+          }
+          let next = this.input.charAt(this.pos)
+          if (next == ":" || next == "|" || next == "/" || next == "}") {
+            let field = fieldIndex(seq, "")
+            if (next == ":") {
+              this.pos++
+              let pos = new FieldPos(field, this.line, this.out.length, this.out.length)
+              positions.push(pos)
+              this.parseText(true)
+              pos.to = this.out.length
+              return
+            }
+            if (next == "|") {
+              this.pos++
+              let pos = new FieldPos(field, this.line, this.out.length, this.out.length)
+              positions.push(pos)
+              let options = this.parseChoices()
+              let first = options.length ? options[0] : ""
+              this.out += first
+              pos.to = this.out.length
+              if (!choices[field]) choices[field] = options
+              return
+            }
+            if (next == "/") {
+              this.pos++
+              positions.push(new FieldPos(field, this.line, this.out.length, this.out.length))
+              this.skipTransform()
+              return
+            }
+            this.pos++
+            positions.push(new FieldPos(field, this.line, this.out.length, this.out.length))
+            return
+          }
+          this.pos = start
+        }
+        let name = this.parseName()
+        let field = fieldIndex(null, name)
+        let from = this.out.length
+        this.out += name
+        positions.push(new FieldPos(field, this.line, from, this.out.length))
+      }
+
+      parseName() {
+        let name = ""
+        while (this.pos < this.input.length) {
+          let ch = this.input.charAt(this.pos)
+          if (ch == "}") {
+            this.pos++
+            return name
+          }
+          if (ch == "\\" && (this.input.charAt(this.pos + 1) == "{" || this.input.charAt(this.pos + 1) == "}")) {
+            name += this.input.charAt(this.pos + 1)
+            this.pos += 2
+            continue
+          }
+          name += ch
+          this.pos++
+        }
+        return name
+      }
+
+      parseChoices() {
+        let options: string[] = []
+        let current = ""
+        while (this.pos < this.input.length) {
+          let ch = this.input.charAt(this.pos)
+          if (ch == "\\") {
+            let next = this.input.charAt(this.pos + 1)
+            if (next && (next == "," || next == "|" || next == "}" || next == "\\")) {
+              current += next
+              this.pos += 2
+              continue
+            }
+          }
+          if (ch == ",") {
+            options.push(current)
+            current = ""
+            this.pos++
+            continue
+          }
+          if (ch == "|" && this.input.charAt(this.pos + 1) == "}") {
+            options.push(current)
+            this.pos += 2
+            return options
+          }
+          current += ch
+          this.pos++
+        }
+        options.push(current)
+        return options
+      }
+
+      skipTransform() {
+        if (!this.skipTo("/")) return
+        if (!this.skipTo("/")) return
+        this.skipTo("}")
+      }
+
+      skipTo(end: string) {
+        while (this.pos < this.input.length) {
+          let ch = this.input.charAt(this.pos)
+          if (ch == "\\") {
+            if (this.pos + 1 < this.input.length) {
+              this.pos += 2
+              continue
+            }
+            this.pos++
+            continue
+          }
+          if (ch == end) {
+            this.pos++
+            return true
+          }
+          this.pos++
+        }
+        return false
+      }
+    }
+
+    for (let line of template.split(/\r\n?|\n/)) {
+      let parser: LineParser = new LineParser(line, lines.length)
+      lines.push(parser.parse())
+    }
+    return new Snippet(lines, positions, choices)
   }
 }
 
@@ -93,12 +298,15 @@ let fieldMarker = Decoration.widget({widget: new class extends WidgetType {
   ignoreEvent() { return false }
 }})
 let fieldRange = Decoration.mark({class: "cm-snippetField"})
+let activeSnippetChoices: SnippetChoices = {}
 
 class ActiveSnippet {
   deco: DecorationSet
 
   constructor(readonly ranges: readonly FieldRange[],
-              readonly active: number) {
+              readonly active: number,
+              readonly choices: SnippetChoices = activeSnippetChoices) {
+    activeSnippetChoices = this.choices
     this.deco = Decoration.set(ranges.map(r => (r.from == r.to ? fieldMarker : fieldRange).range(r.from, r.to)), true)
   }
 
@@ -124,7 +332,7 @@ const setActive = StateEffect.define<ActiveSnippet | null>({
 
 const moveToField = StateEffect.define<number>()
 
-const snippetState = StateField.define<ActiveSnippet | null>({
+export const snippetState = StateField.define<ActiveSnippet | null>({
   create() { return null },
 
   update(value, tr) {
@@ -176,7 +384,7 @@ function fieldSelection(ranges: readonly FieldRange[], field: number) {
 export function snippet(template: string) {
   let snippet = Snippet.parse(template)
   return (editor: {state: EditorState, dispatch: (tr: Transaction) => void}, completion: Completion | null, from: number, to: number) => {
-    let {text, ranges} = snippet.instantiate(editor.state, from)
+    let {text, ranges, choices} = snippet.instantiate(editor.state, from)
     let {main} = editor.state.selection
     let spec: TransactionSpec = {
       changes: {from, to: to == main.from ? main.to : to, insert: Text.of(text)},
@@ -185,7 +393,7 @@ export function snippet(template: string) {
     }
     if (ranges.length) spec.selection = fieldSelection(ranges, 0)
     if (ranges.some(r => r.field > 0)) {
-      let active = new ActiveSnippet(ranges, 0)
+      let active = new ActiveSnippet(ranges, 0, choices)
       let effects: StateEffect<unknown>[] = spec.effects = [setActive.of(active)]
       if (editor.state.field(snippetState, false) === undefined)
         effects.push(StateEffect.appendConfig.of([snippetState, addSnippetKeymap, snippetPointerHandler, baseTheme]))
@@ -234,6 +442,46 @@ export function hasNextSnippetField(state: EditorState) {
 export function hasPrevSnippetField(state: EditorState) {
   let active = state.field(snippetState, false)
   return !!(active && active.active > 0)
+}
+
+/// Cycle through choice options for the active snippet field.
+/// `dir` is 1 for next choice, -1 for previous.
+/// Returns false if there is no active snippet or no choices for the
+/// current field.
+export function cycleSnippetChoice(dir: 1 | -1): StateCommand {
+  return ({state, dispatch}) => {
+    let active = state.field(snippetState, false)
+    if (!active) return false
+    let choices = active.choices[active.active]
+    if (!choices || choices.length === 0) return false
+    let activeRanges = active.ranges.filter(r => r.field == active!.active)
+    if (activeRanges.length === 0) return false
+    let currentText = state.sliceDoc(activeRanges[0].from, activeRanges[0].to)
+    let idx = choices.indexOf(currentText)
+    let next = idx < 0 ? 0 : (idx + dir + choices.length) % choices.length
+    let changes = activeRanges.map(r => ({from: r.from, to: r.to, insert: choices![next]}))
+    let newRanges = []
+    let offset = 0
+    for (let i = 0; i < active.ranges.length; i++) {
+      let r = active.ranges[i]
+      let changeIdx = activeRanges.indexOf(r)
+      if (changeIdx >= 0) {
+        let newFrom = r.from + offset
+        let newTo = newFrom + choices![next].length
+        newRanges.push(new FieldRange(r.field, newFrom, newTo))
+        offset += choices![next].length - (r.to - r.from)
+      } else {
+        newRanges.push(new FieldRange(r.field, r.from + offset, r.to + offset))
+      }
+    }
+    dispatch(state.update({
+      changes,
+      selection: fieldSelection(newRanges, active.active),
+      effects: setActive.of(new ActiveSnippet(newRanges, active.active)),
+      scrollIntoView: true
+    }))
+    return true
+  }
 }
 
 const defaultSnippetKeymap = [
