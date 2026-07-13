@@ -12,7 +12,7 @@ class FieldPos {
               public to: number) {}
 }
 
-class FieldRange {
+export class FieldRange {
   constructor(readonly field: number, readonly from: number, readonly to: number) {}
 
   map(changes: ChangeDesc) {
@@ -300,7 +300,7 @@ let fieldMarker = Decoration.widget({widget: new class extends WidgetType {
 let fieldRange = Decoration.mark({class: "cm-snippetField"})
 let activeSnippetChoices: SnippetChoices = {}
 
-class ActiveSnippet {
+export class ActiveSnippet {
   deco: DecorationSet
 
   constructor(readonly ranges: readonly FieldRange[],
@@ -326,7 +326,7 @@ class ActiveSnippet {
   }
 }
 
-const setActive = StateEffect.define<ActiveSnippet | null>({
+export const setActive = StateEffect.define<ActiveSnippet | null>({
   map(value, changes) { return value && value.map(changes) }
 })
 
@@ -348,7 +348,7 @@ export const snippetState = StateField.define<ActiveSnippet | null>({
   provide: f => EditorView.decorations.from(f, val => val ? val.deco : Decoration.none)
 })
 
-function fieldSelection(ranges: readonly FieldRange[], field: number) {
+export function fieldSelection(ranges: readonly FieldRange[], field: number) {
   return EditorSelection.create(ranges.filter(r => r.field == field).map(r => EditorSelection.range(r.from, r.to)))
 }
 
