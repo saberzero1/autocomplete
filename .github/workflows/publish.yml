@@ -1,0 +1,113 @@
+name: Publish
+
+# Publishes to npm via trusted publishing (OIDC) — no NPM_TOKEN secret is involved.
+#
+# The registry identifies this workflow by its filename, so the trusted publisher configured on
+# npmjs.com must name `publish.yml` exactly. Moving or renaming this file silently breaks
+# authentication, and `npm publish` must stay in this file rather than a reusable workflow: npm
+# validates the calling workflow's name, not the one that actually runs the publish.
+#
+# ONE-TIME BOOTSTRAP — this workflow cannot perform the very first publish. npm requires a package
+# to exist before a trusted publisher can be attached to it, so publish 6.20.3 by hand once
+# (`npm publish`, with 2FA), then on npmjs.com add a GitHub Actions trusted publisher with
+# organization `saberzero1`, repository `autocomplete`, workflow `publish.yml` (filename only,
+# no path), and no environment. Since 2026-09-03 a new publisher is not granted direct-publish
+# rights automatically — enable the `npm publish` action on it, or this workflow will only be
+# allowed to stage.
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        name: Check for an unpublished version
+        runs-on: ubuntu-latest
+        outputs:
+            publish: ${{ steps.version.outputs.publish }}
+            package: ${{ steps.version.outputs.package }}
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+
+            # Every push runs this job, so it stays cheap: no dependency install, no build. The
+            # expensive job below is skipped unless package.json carries a version the registry
+            # does not already have, which is what makes "publish on push" safe to leave on.
+            - name: Compare package.json against the registry
+              id: version
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  name="$(node -p "require('./package.json').name")"
+                  version="$(node -p "require('./package.json').version")"
+                  echo "package=$name@$version" >> "$GITHUB_OUTPUT"
+
+                  # `npm view <pkg>@<version>` exits non-zero when the package does not exist at
+                  # all, and exits 0 with empty output when the package exists but that version
+                  # does not. Testing the output covers both; testing the exit code covers neither.
+                  existing="$(npm view "$name@$version" version 2>/dev/null || true)"
+                  if [ -n "$existing" ]; then
+                      echo "$name@$version is already published — nothing to do."
+                      echo "publish=false" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "$name@$version is not on the registry — it will be published."
+                      echo "publish=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+    publish:
+        name: Publish to npm
+        needs: check
+        if: needs.check.outputs.publish == 'true'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # required for trusted publishing; without it npm fails with ENEEDAUTH
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+
+            # Trusted publishing needs npm >= 11.5.1. Node 24 ships a new enough npm, but assert it
+            # rather than trust it — an older npm authenticates as an anonymous user and fails with
+            # a 404 that reads like a missing package rather than a version problem.
+            - name: Verify npm supports trusted publishing
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  required=11.5.1
+                  actual="$(npm --version)"
+                  if [ "$(printf '%s\n%s\n' "$required" "$actual" | sort -V | head -n1)" != "$required" ]; then
+                      echo "npm $actual is older than the $required required for trusted publishing" >&2
+                      exit 1
+                  fi
+                  echo "npm $actual, node $(node --version)"
+
+            # `npm ci` runs the root `prepare`, which is this package's build.
+            - name: Install dependencies
+              run: npm ci
+
+            # The entry points in package.json all live under dist/, and a build that half-failed
+            # would otherwise publish a package that resolves to nothing.
+            - name: Verify the build output
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  for file in dist/index.js dist/index.cjs dist/index.d.ts dist/index.d.cts; do
+                      test -s "$file" || { echo "missing or empty build output: $file" >&2; exit 1; }
+                  done
+
+            # No --provenance flag and no NODE_AUTH_TOKEN: under trusted publishing npm mints a
+            # short-lived token from the OIDC claim and attaches provenance by itself.
+            - name: Publish ${{ needs.check.outputs.package }}
+              run: npm publish

@@ -1,5 +1,5 @@
 {
-  "name": "@codemirror/autocomplete",
+  "name": "@saberzero1/codemirror-autocomplete",
   "version": "6.20.3",
   "description": "Autocompletion for the CodeMirror code editor",
   "scripts": {
@@ -25,6 +25,12 @@
   "module": "dist/index.js",
   "sideEffects": false,
   "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "DIFFERENCES.md"
+  ],
   "dependencies": {
     "@codemirror/language": "^6.0.0",
     "@codemirror/state": "^6.0.0",
@@ -36,6 +42,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://code.haverbeke.berlin/codemirror/autocomplete.git"
+    "url": "git+https://github.com/saberzero1/autocomplete.git"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

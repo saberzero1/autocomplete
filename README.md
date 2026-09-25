@@ -1,6 +1,8 @@
-**This repository has moved to https://code.haverbeke.berlin/codemirror/autocomplete**
+# @saberzero1/codemirror-autocomplete [![NPM version](https://img.shields.io/npm/v/@saberzero1/codemirror-autocomplete.svg)](https://www.npmjs.org/package/@saberzero1/codemirror-autocomplete)
 
-# @codemirror/autocomplete [![NPM version](https://img.shields.io/npm/v/@codemirror/autocomplete.svg)](https://www.npmjs.org/package/@codemirror/autocomplete)
+This is a fork of [@codemirror/autocomplete](https://code.haverbeke.berlin/codemirror/autocomplete),
+published as `@saberzero1/codemirror-autocomplete`. See [DIFFERENCES.md](DIFFERENCES.md) for what it
+changes. The upstream documentation below still applies.
 
 [ [**WEBSITE**](https://codemirror.net/) | [**DOCS**](https://codemirror.net/docs/ref/#autocomplete) | [**ISSUES**](https://code.haverbeke.berlin/codemirror/dev/issues) | [**FORUM**](https://discuss.codemirror.net/) | [**CHANGELOG**](https://code.haverbeke.berlin/codemirror/autocomplete/src/branch/main/CHANGELOG.md) ]
 
